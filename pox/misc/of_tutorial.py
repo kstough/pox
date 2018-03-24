@@ -94,67 +94,61 @@ class Tutorial(object):
     """
     logline = str(packet)
 
-    # pkt.ethernet.ARP_TYPE
-    if packet.type == pkt.ethernet.IP_TYPE:  # IPv4
-      # Learn the port for the source MAC
-      port_in = self.mac_to_port.get(packet.src)
-      if not port_in:
-        port_in = packet_in.in_port
-        self.mac_to_port[packet.src] = port_in
+    # Learn the port for the source MAC
+    port_in = self.mac_to_port.get(packet.src)
+    if not port_in:
+      port_in = packet_in.in_port
+      self.mac_to_port[packet.src] = port_in
 
-      # if the port associated with the destination MAC of the packet is known:
-      port_out = self.mac_to_port.get(packet.dst)
-      if port_out:
-        # Send packet out the associated port
-        self.resend_packet(packet_in, port_out)
-        log_extra = '{} -> {}'.format(port_in, port_out)
+    # if the port associated with the destination MAC of the packet is known:
+    port_out = self.mac_to_port.get(packet.dst)
 
-        # if port_in == 1:
-        # # Once you have the above working, try pushing a flow entry
-        #   # instead of resending the packet (comment out the above and
-        #   # uncomment and complete the below.)
-        #   log.debug("Installing flow...")
-        #   # Maybe the log statement should have source/destination/port?
-        log_extra = '[{}]'.format(log_extra)
+    if not port_out:
+      # Flood the packet out everything but the input port
+      self.resend_packet(packet_in, of.OFPP_ALL)
+      logline += '  {} -> {}'.format(port_in, '*')
+    else:
 
-        msg = of.ofp_flow_mod()
-        #
-        ## Set fields to match received packet
-        msg.match = of.ofp_match.from_packet(packet)
-        # of.ofp_match.
-        msg.cookie = 1
-        # msg.command = of.OFPFC_ADD
-        msg.idle_timeout = 30
-        msg.hard_timeout = 60
-        msg.actions.append(of.ofp_action_output(port=port_out))
+      # Send packet out the associated port
+      self.resend_packet(packet_in, port_out)
+      log_extra = '{} -> {}'.format(port_in, port_out)
 
+      # Add flow entry for future packets
+      log_extra = '[Flow: {}]'.format(log_extra)
+
+      msg = of.ofp_flow_mod()
+      msg.match = of.ofp_match.from_packet(packet)
+      # msg.cookie = 1
+      msg.idle_timeout = 120
+      msg.hard_timeout = 300
+      msg.actions.append(of.ofp_action_output(port=port_out))
+
+      if packet.type == pkt.ethernet.IP_TYPE:  # IPv4
         protocol_name = ipv4_protocol_to_name[packet.payload.protocol]
         log_extra += '  ' + str(protocol_name)
         if packet.payload.protocol == pkt.ipv4.TCP_PROTOCOL:  # IPv4/TCP
+          # Ignore TCP ports (otherwise we get a lot of rules due to different client ports)
           msg.match.wildcards |= \
             of.ofp_flow_wildcards_rev_map['OFPFW_TP_SRC'] | \
             of.ofp_flow_wildcards_rev_map['OFPFW_TP_DST']
 
         elif packet.payload.protocol == pkt.ipv4.ICMP_PROTOCOL:  # IPv4/ICMP
-          pass
+          pass # Nothing special for ICMP
         else:
           log_extra += ' Unhandled'
-          #
-        # < Set other fields of flow_mod (timeouts? buffer_id?) >
-        #
-        # < Add an output action, and send -- similar to resend_packet() >
 
         self.connection.send(msg)
-
         logline += '  ' + log_extra
-      else:
-        # Flood the packet out everything but the input port
-        self.resend_packet(packet_in, of.OFPP_ALL)
-        logline += '  {} -> {}'.format(port_in, '*')
 
-    else:  # Not IP_TYPE
-      self.resend_packet(packet_in, of.OFPP_ALL)
-      logline = None
+      elif packet.type == pkt.ethernet.ARP_TYPE:
+
+        self.connection.send(msg)
+        logline += '  ' + log_extra
+        pass
+
+    # else:  # Not IP_TYPE
+    #   self.resend_packet(packet_in, of.OFPP_ALL)
+    #   # logline = None
 
     if logline:
       log.debug(logline)
