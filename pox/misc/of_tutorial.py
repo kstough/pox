@@ -69,6 +69,8 @@ class Tutorial (object):
     the input port.
     """
 
+    log.info(str(packet))
+
     # We want to output to all ports -- we do that using the special
     # OFPP_ALL port as the output port.  (We could have also used
     # OFPP_FLOOD.)
@@ -83,6 +85,7 @@ class Tutorial (object):
     """
     Implement switch-like behavior.
     """
+    log.info(str(packet))
 
     """ # DELETE THIS LINE TO START WORKING ON THIS (AND THE ONE BELOW!) #
 

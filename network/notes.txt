@@ -1,0 +1,3 @@
+host TCP Dump
+
+tcpdump -XX -n -i <interface>
