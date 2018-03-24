@@ -1,3 +1,6 @@
 host TCP Dump
-
 tcpdump -XX -n -i <interface>
+
+
+View active flow rules:
+sudo ovs-ofctl dump-flows s1
