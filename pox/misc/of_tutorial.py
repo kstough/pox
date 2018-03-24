@@ -27,9 +27,12 @@ import pox.lib.packet as pkt
 
 log = core.getLogger()
 
-
 # default_timeout = of.OFP_FLOW_PERMANENT
-default_timeout = 60*60 # 1h, in seconds
+default_timeout = 60 * 60  # 1h, in seconds
+
+ipv4_attrs = pkt.IPV4.ipv4.__dict__
+ipv4_protocol_to_name = {ipv4_attrs[k]: k for k in ipv4_attrs if type(ipv4_attrs[k]) is int}
+
 
 class Tutorial(object):
   """
@@ -92,7 +95,7 @@ class Tutorial(object):
     logline = str(packet)
 
     # pkt.ethernet.ARP_TYPE
-    if packet.type == pkt.ethernet.IP_TYPE:
+    if packet.type == pkt.ethernet.IP_TYPE:  # IPv4
       # Learn the port for the source MAC
       port_in = self.mac_to_port.get(packet.src)
       if not port_in:
@@ -106,32 +109,42 @@ class Tutorial(object):
         self.resend_packet(packet_in, port_out)
         log_extra = '{} -> {}'.format(port_in, port_out)
 
-        if port_in == 1:
-          # # Once you have the above working, try pushing a flow entry
-          #   # instead of resending the packet (comment out the above and
-          #   # uncomment and complete the below.)
-          #   log.debug("Installing flow...")
-          #   # Maybe the log statement should have source/destination/port?
-          log_extra = '[{}]'.format(log_extra)
+        # if port_in == 1:
+        # # Once you have the above working, try pushing a flow entry
+        #   # instead of resending the packet (comment out the above and
+        #   # uncomment and complete the below.)
+        #   log.debug("Installing flow...")
+        #   # Maybe the log statement should have source/destination/port?
+        log_extra = '[{}]'.format(log_extra)
 
-          msg = of.ofp_flow_mod()
+        msg = of.ofp_flow_mod()
+        #
+        ## Set fields to match received packet
+        msg.match = of.ofp_match.from_packet(packet)
+        # of.ofp_match.
+        msg.cookie = 1
+        # msg.command = of.OFPFC_ADD
+        msg.idle_timeout = 30
+        msg.hard_timeout = 60
+        msg.actions.append(of.ofp_action_output(port=port_out))
+
+        protocol_name = ipv4_protocol_to_name[packet.payload.protocol]
+        log_extra += '  ' + str(protocol_name)
+        if packet.payload.protocol == pkt.ipv4.TCP_PROTOCOL:  # IPv4/TCP
+          msg.match.wildcards |= \
+            of.ofp_flow_wildcards_rev_map['OFPFW_TP_SRC'] | \
+            of.ofp_flow_wildcards_rev_map['OFPFW_TP_DST']
+
+        elif packet.payload.protocol == pkt.ipv4.ICMP_PROTOCOL:  # IPv4/ICMP
+          pass
+        else:
+          log_extra += ' Unhandled'
           #
-          ## Set fields to match received packet
-          msg.match = of.ofp_match.from_packet(packet)
-          # of.ofp_match.
-          msg.cookie = 1
-          # msg.command = of.OFPFC_ADD
-          msg.idle_timeout=default_timeout
-          msg.hard_timeout=30
-          msg.actions.append(of.ofp_action_output(port=port_out))
+        # < Set other fields of flow_mod (timeouts? buffer_id?) >
+        #
+        # < Add an output action, and send -- similar to resend_packet() >
 
-
-          #
-          #< Set other fields of flow_mod (timeouts? buffer_id?) >
-          #
-          #< Add an output action, and send -- similar to resend_packet() >
-
-          self.connection.send(msg)
+        self.connection.send(msg)
 
         logline += '  ' + log_extra
       else:
@@ -141,9 +154,10 @@ class Tutorial(object):
 
     else:  # Not IP_TYPE
       self.resend_packet(packet_in, of.OFPP_ALL)
-      logline += '  ignored'
+      logline = None
 
-    log.debug(logline)
+    if logline:
+      log.debug(logline)
 
   def _handle_PacketIn(self, event):
     """
