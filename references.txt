@@ -4,3 +4,5 @@ https://github.com/mininet/openflow-tutorial/wiki/Create-a-Learning-Switch
 
 https://github.com/noxrepo/pox
 
+Flow rule match information (wildcards etc)
+http://flowgrammable.org/sdn/openflow/message-layer/match/
