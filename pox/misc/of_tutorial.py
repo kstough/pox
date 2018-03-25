@@ -119,8 +119,8 @@ class Tutorial(object):
       msg = of.ofp_flow_mod()
       msg.match = of.ofp_match.from_packet(packet)
       # msg.cookie = 1
-      msg.idle_timeout = 120
-      msg.hard_timeout = 300
+      # msg.idle_timeout = 120
+      # msg.hard_timeout = 300
       msg.actions.append(of.ofp_action_output(port=port_out))
 
       if packet.type == pkt.ethernet.IP_TYPE:  # IPv4
@@ -177,7 +177,7 @@ def launch():
   """
 
   def start_switch(event):
-    log.debug("Controlling %s" % (event.connection,))
+    log.info("Controlling %s" % (event.connection,))
     Tutorial(event.connection)
 
   core.openflow.addListenerByName("ConnectionUp", start_switch)
