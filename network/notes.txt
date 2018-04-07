@@ -4,3 +4,6 @@ tcpdump -XX -n -i <interface>
 
 View active flow rules:
 sudo ovs-ofctl dump-flows s1
+
+ex:
+watch -n 0.5 'sudo ovs-ofctl dump-flows s7 | wc -l; echo; sudo ovs-ofctl dump-flows s7 | sed "s/,/\t/g"'

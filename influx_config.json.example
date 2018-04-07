@@ -1,0 +1,7 @@
+# Rename to influx_config.json and remove this comment
+{
+  "server": "192.168.1.127",
+  "db": "pox",
+  "user": "influx_user",
+  "pass": "influx_password"
+}

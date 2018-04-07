@@ -1,3 +1,8 @@
+"""
+Monitor for Openflow controller which sends stats to
+an InfluxDB instance for graphing using Grafana.
+"""
+
 from pox.core import core
 import pox.openflow.libopenflow_01 as of
 import pox.lib.packet as pkt
