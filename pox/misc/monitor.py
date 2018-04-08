@@ -6,10 +6,17 @@ an InfluxDB instance for graphing using Grafana.
 from pox.core import core
 import pox.openflow.libopenflow_01 as of
 import pox.lib.packet as pkt
-import time, threading, datetime, json, math
+import time
+import threading
+import datetime
+import json
+import math
 import influxdb
 
 log = core.getLogger('Monitor')
+
+ipv4_attrs = of.ipv4.__dict__
+nw_proto_lookup = {ipv4_attrs[k]: k for k in ipv4_attrs if isinstance(ipv4_attrs[k], int)}
 
 
 def launch():
@@ -46,15 +53,23 @@ def launch():
     # Monitor(event.connection)
     # log.info('{} - {}'.format(datetime.datetime.now(), event))
 
-    stats = event.stats
+    keyed_matches = {}
+
     stat_collection = []
     for stat in event.stats:
+      ether_type = of.ethernet.getNameForType(stat.match._dl_type)
+      subtype = ''
+      if ether_type == 'IP':
+        subtype = nw_proto_lookup[stat.match.nw_proto]
+
       stat_point = {
         'measurement': 'flowstats',
         'tags': {
-          'type': of.ethernet.getNameForType(stat.match._dl_type),
+          'type': ether_type,
+          'subtype': subtype,
           'src': '{}/{}'.format(*stat.match.get_nw_src()),
           'dst': '{}/{}'.format(*stat.match.get_nw_dst()),
+          'connection': str(event.connection),
         },
         'time': current_time,
         'fields': {
@@ -64,6 +79,17 @@ def launch():
           'duration_nsec': stat.duration_nsec,
         }
       }
+      key = '~'.join(':'.join(x) for x in sorted(stat_point['tags'].iteritems()))
+      if key not in keyed_matches:
+        keyed_matches[key] = list()
+      match_list = keyed_matches[key]
+      match_list.append(stat.match)
+
+      if len(match_list) > 1:
+        print('Warning: encountered duplicate key: "' + key + '"')
+
+      # [(x.match.get_nw_src(), x.match.get_nw_dst()) for x in event.stats if x.match._dl_type == 2048 and x.match.nw_proto == 1 and '{}/{}'.format(*x.match.get_nw_src())=='10.0.0.3/32' and '{}/{}'.format(*x.match.get_nw_dst())=='10.0.0.1/32']
+
       # of.ethernet.getNameForType(stat.match._dl_type) # 'IP'
       # stat.match.get_nw_src() # '10.0.0.1'
       # stat.match.get_nw_dst()
