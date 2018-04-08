@@ -2,6 +2,7 @@
 Based on the OpenFlow tutorial switch
 
 """
+import collections
 
 from pox.core import core
 import pox.openflow.libopenflow_01 as of
@@ -11,90 +12,127 @@ import threading
 import datetime
 import json
 import math
+import numpy as np
 
 ipv4_attrs = pkt.IPV4.ipv4.__dict__
 ipv4_protocol_to_name = {ipv4_attrs[k]: k for k in ipv4_attrs if type(ipv4_attrs[k]) is int}
 
 
+# Note: all flow stats are in packets and bytes (not bits)
 class AnomalyMonitor:
-  class RuleStat:
-    def __init__(self):
-      pass
 
-  stats = {}
+  def __init__(self, connection, mapped_ports):
+    self.limit_pps = 30 * 1000  # 30 kpps
+    self.limit_bits_s = 20 * 1024 * 1024  # 20 Mbps
+    self.limit_bps = self.limit_bits_s / 8
 
-  def __init__(self, connection):
     self.log = core.getLogger('AnomalyMonitor')
-
+    self.stats = {}
     self.stat_interval_seconds = 1
-    self.history_depth = 60
+    self.history_depth = 10
     self.connection = connection
+    self.mapped_ports = mapped_ports
 
     core.openflow.addListenerByName("FlowStatsReceived", self.handle_flow_stats)
-    stat_loop = threading.Thread(target=self.request_stats_loop)
-    stat_loop.start()
-
-  def request_stats_loop(self):
-    next_time = math.floor(time.time()) + 0.5
-    while True:
-      for conn in [self.connection]:
-        conn.send(of.ofp_stats_request(body=of.ofp_flow_stats_request()))
-
-      while (time.time() >= next_time):
-        next_time += self.stat_interval_seconds
-      time.sleep(next_time - time.time())
 
   def handle_flow_stats(self, event):
+    if event.connection != self.connection:
+      return
+
     current_time = datetime.datetime.utcnow()
-    # always truncate to current second
+    current_seconds = time.mktime(current_time.timetuple())
+
+    # always truncate to current second, makes stats keeping easier
     current_time = current_time - datetime.timedelta(microseconds=current_time.microsecond)
 
-    from .monitor import nw_proto_lookup
-    keyed_matches = {}
-
-    stat_collection = []
+    # Step 1: aggregate event data
+    stat_collection = {}
     for stat in event.stats:
-      ether_type = of.ethernet.getNameForType(stat.match._dl_type)
-      subtype = ''
-      if ether_type == 'IP':
-        subtype = nw_proto_lookup[stat.match.nw_proto]
-
       conn_id = event.connection.ID
       src = '{}/{}'.format(*stat.match.get_nw_src())
       dst = '{}/{}'.format(*stat.match.get_nw_dst())
+      first, second = sorted((src, dst))
+      key = (conn_id, first, second)
 
-      key = (conn_id, src, dst)
+      packets = stat.packet_count
+      bytes_ = stat.byte_count
+
+      if key in stat_collection:
+        stats = (current_seconds,
+                 stat_collection[key][1] + packets,
+                 stat_collection[key][2] + bytes_)
+      else:
+        stats = (current_seconds, packets, bytes_)
+      stat_collection[key] = stats
+
+    # Step 2: update our internal stat counters
+    num_stats_updated = 0
+    for key in stat_collection:
+      stats = stat_collection[key]
       if key not in self.stats:
-        self.stats[key] = {}
+        # Populate (current index, data)
+        self.stats[key] = (0, np.zeros((self.history_depth, 5), dtype=np.float))
 
-      stats = self.stats[key]
+      index, conn_stats = self.stats[key]
+      prev_index = (index + self.history_depth - 1) % self.history_depth
 
+      if conn_stats[prev_index][0] == current_seconds:
+        continue
 
-      # stat_point = {
-      #   'measurement': 'flowstats',
-      #   'tags': {
-      #     'type': ether_type,
-      #     'subtype': subtype,
-      #     'src': '{}/{}'.format(*stat.match.get_nw_src()),
-      #     'dst': '{}/{}'.format(*stat.match.get_nw_dst()),
-      #     'connection': str(event.connection),
-      #   },
-      #   'time': current_time,
-      #   'fields': {
-      #     'packets': stat.packet_count,
-      #     'bytes': stat.byte_count,
-      #     'duration_sec': stat.duration_sec,
-      #     'duration_nsec': stat.duration_nsec,
-      #   }
-      # }
-      # key = '~'.join(':'.join(x) for x in sorted(stat_point['tags'].iteritems()))
-      # if key not in keyed_matches:
-      #   keyed_matches[key] = list()
-      # match_list = keyed_matches[key]
-      # match_list.append(stat.match)
-      #
-      # if len(match_list) > 1:
-      #   print('Warning: encountered duplicate key: "' + key + '"')
+      conn_stats[index][0:3] = stats
+      if conn_stats[prev_index][0] > 0:
+        diff = conn_stats[index] - conn_stats[prev_index]
+        if diff[0] <= 0:
+          self.log.warning('Div by zero in stat diff')
+        pps = diff[1] / diff[0]
+        bps = diff[2] / diff[0]
+        conn_stats[index][3:5] = (pps, bps)
+
+      index = (index + 1) % self.history_depth
+      self.stats[key] = (index, conn_stats)
+      num_stats_updated += 1
+
+    if num_stats_updated == 0:
+      return
+
+    # Step 3: Check for high-bandwidth connections
+    for key in self.stats:
+      index, data = self.stats[key]
+      _, _, _, pps_avg, bps_avg = np.average(data, axis=0)
+      _, _, _, pps_max, bps_max = np.average(data, axis=0)
+      # self.log.debug('{}: {:-10.3f} kpps, {:-10.3f} Mbps'.format(key, pps_avg / 1000,
+      #                                                            bps_avg * 8 / 1024 / 1024))
+
+      if pps_avg > self.limit_pps or bps_avg > self.limit_bps:
+        self.log.debug('{}: {:-10.3f} kpps, {:-10.3f} Mbps'.format(key, pps_avg / 1000,
+                                                                   bps_avg * 8 / 1024 / 1024))
+        # Finally, throttle the connection
+        self.act_on_busy_link(key)
+
+  def act_on_busy_link(self, key):
+    self.log.info('{}: Throttling link: {}'.format(datetime.datetime.now(), key))
+
+    controller, ip1, ip2 = key
+
+    # src = ip1, dst=ip2
+    # msg = of.ofp_flow_mod()
+    # msg.match = of.ofp_match(nw_src=src, nw_dst=dst, )
+    # msg.match = of.ofp_match.from_packet(packet)
+    # # msg.cookie = 1
+    # msg.idle_timeout = self.default_timeout
+    # msg.hard_timeout = self.default_timeout
+    # msg.actions.append(of.ofp_action_output(port=port_out))
+    # msg.actions.append(of.ofp_action_output(port=port_out))
+    #
+    # # Handle protocol-specific details
+    # if packet.type == pkt.ethernet.IP_TYPE:
+    #   logline += '  ' + self._prepare_ipv4_rule(msg, packet)
+    # elif packet.type == pkt.ethernet.ARP_TYPE:
+    #   logline += '  ' + self._prepare_arp_rule(msg, packet)
+    # else:
+    #   raise NotImplemented('Unsupported packet type: "' + packet.type + '"')
+    #
+    # self.connection.send(msg)
 
 
 class Controller(object):
@@ -109,10 +147,11 @@ class Controller(object):
 
   def __init__(self, connection):
     self.log = core.getLogger('AnomalyController')
+    self.log.info('Controller.init: {:x}'.format(id(self)))
     self.connection = connection
     connection.addListeners(self)
     self.mac_to_port = {}
-    self.anomaly_monitor = AnomalyMonitor(connection)
+    self.anomaly_monitor = AnomalyMonitor(connection, self.mac_to_port)
 
   def resend_packet(self, packet_in, out_port):
     """

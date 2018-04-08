@@ -113,21 +113,3 @@ def launch():
       influx_client.write_points(stat_collection)
 
   core.openflow.addListenerByName("FlowStatsReceived", handle_flow_stats)
-
-  # for conn in core.openflow.connections:
-  #   conn.send(of.ofp_stats_request(body=of.ofp_flow_stats_request()))
-
-  stat_interval_seconds = 1
-
-  def request_stats_loop():
-    next_time = math.floor(time.time()) + 0.5
-    while True:
-      for conn in core.openflow.connections:
-        conn.send(of.ofp_stats_request(body=of.ofp_flow_stats_request()))
-
-      while (time.time() >= next_time):
-        next_time += stat_interval_seconds
-      time.sleep(next_time - time.time())
-
-  stat_loop = threading.Thread(target=request_stats_loop)
-  stat_loop.start()
