@@ -170,6 +170,8 @@ class Controller(object):
     self.connection.send(msg)
 
   def act_like_switch(self, packet, packet_in):
+    if packet.type == pkt.ethernet.IPV6_TYPE:
+      return
     logline = '{}:{}'.format(self.connection.ID, packet)
 
     # Learn the port for the source MAC
