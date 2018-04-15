@@ -28,6 +28,7 @@ class AnomalyMonitor:
 
     self.log = core.getLogger('AnomalyMonitor')
     self.stats = {}
+    self.rules = {}
     self.stat_interval_seconds = 1
     self.history_depth = 10
     self.connection = connection
@@ -64,6 +65,11 @@ class AnomalyMonitor:
       else:
         stats = (current_seconds, packets, bytes_)
       stat_collection[key] = stats
+
+      if key not in self.rules:
+        self.rules[key] = []
+      if stat.match not in self.rules[key]:
+        self.rules[key].append(stat.match)
 
     # Step 2: update our internal stat counters
     num_stats_updated = 0
@@ -111,28 +117,16 @@ class AnomalyMonitor:
 
   def act_on_busy_link(self, key):
     self.log.info('{}: Throttling link: {}'.format(datetime.datetime.now(), key))
+    # Take all rules for this client and block them all
+    for match in self.rules[key]:
+      msg = of.ofp_flow_mod()
+      msg.match = match
+      msg.idle_timeout = 10
+      msg.hard_timeout = 10
+      msg.out_port = of.OFPP_NONE
+      self.connection.send(msg)
 
-    controller, ip1, ip2 = key
-
-    # src = ip1, dst=ip2
-    # msg = of.ofp_flow_mod()
-    # msg.match = of.ofp_match(nw_src=src, nw_dst=dst, )
-    # msg.match = of.ofp_match.from_packet(packet)
-    # # msg.cookie = 1
-    # msg.idle_timeout = self.default_timeout
-    # msg.hard_timeout = self.default_timeout
-    # msg.actions.append(of.ofp_action_output(port=port_out))
-    # msg.actions.append(of.ofp_action_output(port=port_out))
-    #
-    # # Handle protocol-specific details
-    # if packet.type == pkt.ethernet.IP_TYPE:
-    #   logline += '  ' + self._prepare_ipv4_rule(msg, packet)
-    # elif packet.type == pkt.ethernet.ARP_TYPE:
-    #   logline += '  ' + self._prepare_arp_rule(msg, packet)
-    # else:
-    #   raise NotImplemented('Unsupported packet type: "' + packet.type + '"')
-    #
-    # self.connection.send(msg)
+    self.rules[key] = []
 
 
 class Controller(object):
