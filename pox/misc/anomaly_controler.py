@@ -26,9 +26,14 @@ class AnomalyMonitor:
     self.limit_bits_s = 20 * 1024 * 1024  # 20 Mbps
     self.limit_bps = self.limit_bits_s / 8
 
+    self.default_timeout = 10  # Initially block aggressive clients for 10s
+    self.timeout_exp_factor = 4  # Multiply timeout by this much each time
+
     self.log = core.getLogger('AnomalyMonitor')
     self.stats = {}
     self.rules = {}
+    self.timeouts = {}
+
     self.stat_interval_seconds = 1
     self.history_depth = 10
     self.connection = connection
@@ -71,13 +76,17 @@ class AnomalyMonitor:
       if stat.match not in self.rules[key]:
         self.rules[key].append(stat.match)
 
+      if key not in self.timeouts:
+        self.timeouts[key] = self.default_timeout
+
     # Step 2: update our internal stat counters
     num_stats_updated = 0
     for key in stat_collection:
       stats = stat_collection[key]
       if key not in self.stats:
         # Populate (current index, data)
-        self.stats[key] = (0, np.zeros((self.history_depth, 5), dtype=np.float))
+        self.reset_stats_for_key(key)
+        # self.stats[key] = (0, np.zeros((self.history_depth, 5), dtype=np.float))
 
       index, conn_stats = self.stats[key]
       prev_index = (index + self.history_depth - 1) % self.history_depth
@@ -114,19 +123,27 @@ class AnomalyMonitor:
                                                                    bps_avg * 8 / 1024 / 1024))
         # Finally, throttle the connection
         self.act_on_busy_link(key)
+        self.reset_stats_for_key(key)
 
   def act_on_busy_link(self, key):
-    self.log.info('{}: Throttling link: {}'.format(datetime.datetime.now(), key))
+    timeout = self.timeouts[key]
+    self.timeouts[key] = timeout * self.timeout_exp_factor
+
+    self.log.info('{}: Blocking link: {} for {} s'.format(datetime.datetime.now(), key, timeout))
+
     # Take all rules for this client and block them all
     for match in self.rules[key]:
       msg = of.ofp_flow_mod()
       msg.match = match
-      msg.idle_timeout = 10
-      msg.hard_timeout = 10
+      msg.idle_timeout = timeout
+      msg.hard_timeout = timeout
       msg.out_port = of.OFPP_NONE
       self.connection.send(msg)
 
     self.rules[key] = []
+
+  def reset_stats_for_key(self, key):
+    self.stats[key] = (0, np.zeros((self.history_depth, 5), dtype=np.float))
 
 
 class Controller(object):
