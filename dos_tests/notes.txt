@@ -1,0 +1,11 @@
+python -m SimpleHTTPServer 80 2> /dev/null
+
+watch -n 5 'curl -s http://10.0.0.5/ > /dev/null; curl -s http://10.0.0.6/ > /dev/null'
+
+while true; do curl -s http://10.0.0.5/ > /dev/null; done
+
+
+while true; do for i in `seq $(($RANDOM % 30))`; do curl -s http://10.0.0.5/ > /dev/null; done; date; sleep 1; done
+
+hping3 --faster -S -p 80 10.0.0.6
+

@@ -26,8 +26,9 @@ class AnomalyMonitor:
     self.limit_bits_s = 20 * 1024 * 1024  # 20 Mbps
     self.limit_bps = self.limit_bits_s / 8
 
-    self.default_timeout = 30  # Initially block aggressive clients for 10s
-    self.timeout_exp_factor = 4  # Multiply timeout by this much each time
+    self.default_timeout = 120  # Initially block aggressive clients for 10s
+    self.timeout_exp_factor = 2  # Multiply timeout by this much each time
+    self.max_timeout = 65535
 
     self.log = core.getLogger('AnomalyMonitor')
     self.stats = {}
@@ -132,7 +133,7 @@ class AnomalyMonitor:
 
   def act_on_busy_link(self, key):
     timeout = self.timeouts[key]
-    self.timeouts[key] = timeout * self.timeout_exp_factor
+    self.timeouts[key] = min(timeout * self.timeout_exp_factor, self.max_timeout)
 
     self.log.info('{}: Blocking link: {} for {} s'.format(datetime.datetime.now(), key, timeout))
 
