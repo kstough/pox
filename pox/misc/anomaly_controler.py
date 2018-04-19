@@ -26,7 +26,7 @@ class AnomalyMonitor:
     self.limit_bits_s = 20 * 1024 * 1024  # 20 Mbps
     self.limit_bps = self.limit_bits_s / 8
 
-    self.default_timeout = 10  # Initially block aggressive clients for 10s
+    self.default_timeout = 30  # Initially block aggressive clients for 10s
     self.timeout_exp_factor = 4  # Multiply timeout by this much each time
 
     self.log = core.getLogger('AnomalyMonitor')
@@ -121,6 +121,11 @@ class AnomalyMonitor:
       if pps_avg > self.limit_pps or bps_avg > self.limit_bps:
         self.log.debug('{}: {:-10.3f} kpps, {:-10.3f} Mbps'.format(key, pps_avg / 1000,
                                                                    bps_avg * 8 / 1024 / 1024))
+        if pps_avg > self.limit_pps:
+          self.log.info('Client exceeded packets per second')
+        else:
+          self.log.info('Client exceeded bytes per second')
+
         # Finally, throttle the connection
         self.act_on_busy_link(key)
         self.reset_stats_for_key(key)
@@ -163,6 +168,18 @@ class Controller(object):
     connection.addListeners(self)
     self.mac_to_port = {}
     self.anomaly_monitor = AnomalyMonitor(connection, self.mac_to_port)
+    self.recent_matches = {}
+
+    def clear_recent_matches():
+      while True:
+        for key in list(self.recent_matches.keys()):
+          if datetime.datetime.utcnow() - self.recent_matches[key] > datetime.timedelta(seconds=10):
+            timestamp = self.recent_matches.pop(key)
+            # self.log.debug('Removed recent rule: {}  {}'.format( timestamp , key))
+        time.sleep(2)
+
+    stat_loop = threading.Thread(target=clear_recent_matches)
+    stat_loop.start()
 
   def resend_packet(self, packet_in, out_port):
     """
@@ -197,7 +214,8 @@ class Controller(object):
     if not port_out:
       # Flood the packet out everything but the input port
       self.resend_packet(packet_in, of.OFPP_ALL)
-      logline += '  {} -> {}'.format(port_in, '*')
+      # logline += '  {} -> {}'.format(port_in, '*')
+      logline = None
 
     else:
       # Send packet out the associated port
@@ -220,6 +238,13 @@ class Controller(object):
       else:
         raise NotImplemented('Unsupported packet type: "' + packet.type + '"')
 
+      # Check to see if we've recently sent a rule for this flow
+      # flow_match = of.ofp_match.from_packet(packet)
+      # flow_match.wildcards
+      if msg.match in self.recent_matches:
+        return  # assume we've already created this rule
+      self.recent_matches[msg.match] = datetime.datetime.utcnow()
+
       self.connection.send(msg)
     if logline:
       self.log.debug(logline)
@@ -231,12 +256,6 @@ class Controller(object):
     msg.match.wildcards |= \
       of.ofp_flow_wildcards_rev_map['OFPFW_TP_SRC'] | \
       of.ofp_flow_wildcards_rev_map['OFPFW_TP_DST']
-    if packet.payload.protocol == pkt.ipv4.TCP_PROTOCOL:  # IPv4/TCP
-      pass
-    elif packet.payload.protocol == pkt.ipv4.ICMP_PROTOCOL:  # IPv4/ICMP
-      pass
-    else:
-      log_extra += ' Unhandled'
     return log_extra
 
   def _prepare_arp_rule(self, msg, packet):
