@@ -1,37 +1,8 @@
 {
-  "__inputs": [
-    {
-      "name": "DS_POX",
-      "label": "pox",
-      "description": "",
-      "type": "datasource",
-      "pluginId": "influxdb",
-      "pluginName": "InfluxDB"
-    }
-  ],
-  "__requires": [
-    {
-      "type": "grafana",
-      "id": "grafana",
-      "name": "Grafana",
-      "version": "5.0.4"
-    },
-    {
-      "type": "panel",
-      "id": "graph",
-      "name": "Graph",
-      "version": "5.0.0"
-    },
-    {
-      "type": "datasource",
-      "id": "influxdb",
-      "name": "InfluxDB",
-      "version": "5.0.0"
-    }
-  ],
   "annotations": {
     "list": [
       {
+        "$$hashKey": "object:4083",
         "builtIn": 1,
         "datasource": "-- Grafana --",
         "enable": true,
@@ -45,8 +16,8 @@
   "editable": true,
   "gnetId": null,
   "graphTooltip": 0,
-  "id": null,
-  "iteration": 1523128140559,
+  "id": 7,
+  "iteration": 1524624542541,
   "links": [],
   "panels": [
     {
@@ -54,7 +25,7 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": "${DS_POX}",
+      "datasource": "pox",
       "fill": 1,
       "gridPos": {
         "h": 10,
@@ -87,7 +58,8 @@
       "steppedLine": false,
       "targets": [
         {
-          "alias": "$tag_src => $tag_dst",
+          "$$hashKey": "object:4145",
+          "alias": "$tag_src_host => $tag_dst_host",
           "groupBy": [
             {
               "params": [
@@ -97,13 +69,13 @@
             },
             {
               "params": [
-                "dst"
+                "src_host"
               ],
               "type": "tag"
             },
             {
               "params": [
-                "src"
+                "dst_host"
               ],
               "type": "tag"
             },
@@ -141,13 +113,7 @@
           ],
           "tags": [
             {
-              "key": "dst",
-              "operator": "=~",
-              "value": "/^$Destination$/"
-            },
-            {
-              "condition": "AND",
-              "key": "src",
+              "key": "src_host",
               "operator": "=~",
               "value": "/^$Source$/"
             },
@@ -156,6 +122,12 @@
               "key": "type",
               "operator": "=~",
               "value": "/^$Type$/"
+            },
+            {
+              "condition": "AND",
+              "key": "dst_host",
+              "operator": "=~",
+              "value": "/^$Destination$/"
             }
           ]
         }
@@ -163,7 +135,7 @@
       "thresholds": [],
       "timeFrom": null,
       "timeShift": null,
-      "title": "Raw Bytes",
+      "title": "Raw Bytes - per-flow",
       "tooltip": {
         "shared": true,
         "sort": 0,
@@ -183,7 +155,7 @@
           "label": null,
           "logBase": 2,
           "max": null,
-          "min": null,
+          "min": "1024",
           "show": true
         },
         {
@@ -201,7 +173,7 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": "${DS_POX}",
+      "datasource": "pox",
       "fill": 1,
       "gridPos": {
         "h": 10,
@@ -234,6 +206,7 @@
       "steppedLine": false,
       "targets": [
         {
+          "$$hashKey": "object:4588",
           "alias": "$tag_connection",
           "groupBy": [
             {
@@ -294,15 +267,15 @@
             },
             {
               "condition": "AND",
-              "key": "src",
+              "key": "dst_host",
               "operator": "=~",
-              "value": "/^$Source$/"
+              "value": "/^$Destination$/"
             },
             {
               "condition": "AND",
-              "key": "dst",
+              "key": "src_host",
               "operator": "=~",
-              "value": "/^$Destination$/"
+              "value": "/^$Source$/"
             }
           ]
         }
@@ -310,7 +283,7 @@
       "thresholds": [],
       "timeFrom": null,
       "timeShift": null,
-      "title": "Raw Bytes",
+      "title": "Raw Bytes - per-switch",
       "tooltip": {
         "shared": true,
         "sort": 0,
@@ -330,7 +303,7 @@
           "label": null,
           "logBase": 2,
           "max": null,
-          "min": null,
+          "min": "4096",
           "show": true
         },
         {
@@ -348,7 +321,7 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": "${DS_POX}",
+      "datasource": "pox",
       "fill": 1,
       "gridPos": {
         "h": 10,
@@ -381,7 +354,8 @@
       "steppedLine": false,
       "targets": [
         {
-          "alias": "$tag_src => $tag_dst",
+          "$$hashKey": "object:4735",
+          "alias": "$tag_src_host => $tag_dst_host",
           "groupBy": [
             {
               "params": [
@@ -391,13 +365,13 @@
             },
             {
               "params": [
-                "dst"
+                "dst_host"
               ],
               "type": "tag"
             },
             {
               "params": [
-                "src"
+                "src_host"
               ],
               "type": "tag"
             },
@@ -435,21 +409,21 @@
           ],
           "tags": [
             {
-              "key": "dst",
+              "key": "type",
               "operator": "=~",
-              "value": "/^$Destination$/"
+              "value": "/^$Type$/"
             },
             {
               "condition": "AND",
-              "key": "src",
+              "key": "src_host",
               "operator": "=~",
               "value": "/^$Source$/"
             },
             {
               "condition": "AND",
-              "key": "type",
+              "key": "dst_host",
               "operator": "=~",
-              "value": "/^$Type$/"
+              "value": "/^$Destination$/"
             }
           ]
         }
@@ -457,7 +431,7 @@
       "thresholds": [],
       "timeFrom": null,
       "timeShift": null,
-      "title": "Raw Packets",
+      "title": "Raw Packets - per-flow",
       "tooltip": {
         "shared": true,
         "sort": 0,
@@ -477,7 +451,7 @@
           "label": null,
           "logBase": 2,
           "max": null,
-          "min": null,
+          "min": "32",
           "show": true
         },
         {
@@ -495,7 +469,7 @@
       "bars": false,
       "dashLength": 10,
       "dashes": false,
-      "datasource": "${DS_POX}",
+      "datasource": "pox",
       "fill": 1,
       "gridPos": {
         "h": 10,
@@ -528,6 +502,7 @@
       "steppedLine": false,
       "targets": [
         {
+          "$$hashKey": "object:4873",
           "alias": "$tag_connection",
           "groupBy": [
             {
@@ -588,13 +563,13 @@
             },
             {
               "condition": "AND",
-              "key": "src",
+              "key": "src_host",
               "operator": "=~",
               "value": "/^$Source$/"
             },
             {
               "condition": "AND",
-              "key": "dst",
+              "key": "dst_host",
               "operator": "=~",
               "value": "/^$Destination$/"
             }
@@ -604,7 +579,7 @@
       "thresholds": [],
       "timeFrom": null,
       "timeShift": null,
-      "title": "Raw Packets",
+      "title": "Raw Packets - per-switch",
       "tooltip": {
         "shared": true,
         "sort": 0,
@@ -624,7 +599,7 @@
           "label": null,
           "logBase": 2,
           "max": null,
-          "min": null,
+          "min": "256",
           "show": true
         },
         {
@@ -698,15 +673,20 @@
       },
       {
         "allValue": null,
-        "current": {},
-        "datasource": "${DS_POX}",
+        "current": {
+          "text": "All",
+          "value": [
+            "$__all"
+          ]
+        },
+        "datasource": "pox",
         "hide": 0,
         "includeAll": true,
         "label": null,
         "multi": true,
         "name": "Source",
         "options": [],
-        "query": "show tag values with key = \"src\"",
+        "query": "show tag values with key = \"src_host\"",
         "refresh": 1,
         "regex": "",
         "sort": 3,
@@ -718,15 +698,21 @@
       },
       {
         "allValue": null,
-        "current": {},
-        "datasource": "${DS_POX}",
+        "current": {
+          "tags": [],
+          "text": "All",
+          "value": [
+            "$__all"
+          ]
+        },
+        "datasource": "pox",
         "hide": 0,
         "includeAll": true,
         "label": null,
         "multi": true,
         "name": "Destination",
         "options": [],
-        "query": "show tag values with key = \"dst\"",
+        "query": "show tag values with key = \"dst_host\"",
         "refresh": 1,
         "regex": "",
         "sort": 3,
@@ -738,8 +724,13 @@
       },
       {
         "allValue": null,
-        "current": {},
-        "datasource": "${DS_POX}",
+        "current": {
+          "text": "All",
+          "value": [
+            "$__all"
+          ]
+        },
+        "datasource": "pox",
         "hide": 0,
         "includeAll": true,
         "label": null,
@@ -758,8 +749,13 @@
       },
       {
         "allValue": null,
-        "current": {},
-        "datasource": "${DS_POX}",
+        "current": {
+          "text": "All",
+          "value": [
+            "$__all"
+          ]
+        },
+        "datasource": "pox",
         "hide": 0,
         "includeAll": true,
         "label": null,
@@ -779,7 +775,7 @@
     ]
   },
   "time": {
-    "from": "now-15m",
+    "from": "now-5m",
     "to": "now"
   },
   "timepicker": {
@@ -810,5 +806,5 @@
   "timezone": "",
   "title": "pox",
   "uid": "an4UR0zmk",
-  "version": 13
+  "version": 15
 }

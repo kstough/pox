@@ -5,13 +5,10 @@ an InfluxDB instance for graphing using Grafana.
 
 from pox.core import core
 import pox.openflow.libopenflow_01 as of
-import pox.lib.packet as pkt
-import time
-import threading
 import datetime
 import json
-import math
 import influxdb
+from .local_stat_logger import ip_to_hostname
 
 log = core.getLogger('Monitor')
 
@@ -69,6 +66,8 @@ def launch():
           'subtype': subtype,
           'src': '{}/{}'.format(*stat.match.get_nw_src()),
           'dst': '{}/{}'.format(*stat.match.get_nw_dst()),
+          'src_host': ip_to_hostname(stat.match.get_nw_src()),
+          'dst_host': ip_to_hostname(stat.match.get_nw_dst()),
           'connection': str(event.connection),
         },
         'time': current_time,
