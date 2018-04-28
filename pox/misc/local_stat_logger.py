@@ -36,6 +36,8 @@ class StatLogger():
     self.raw_writer.__enter__()
     self.writer = csv.writer(self.raw_writer, lineterminator='\n')
     self.writer.writerow([
+      'time',
+      'seconds',
       'type',
       'subtype',
       'src_ip',
@@ -43,11 +45,8 @@ class StatLogger():
       'src',
       'dst',
       'connection',
-      'time',
-      'seconds',
-      'packets',
-      'bytes',
-      'duration_sec',
+      'packets/s',
+      'bytes/s',
     ])
 
   def close(self):
@@ -55,8 +54,11 @@ class StatLogger():
 
   def handle_flow_stats(self, event):
     current_time = datetime.datetime.utcnow()
-    # always truncate to current second
-    current_time = current_time - datetime.timedelta(microseconds=current_time.microsecond)
+    current_seconds = time.mktime(current_time.timetuple()) + current_time.microsecond / 1000000.0
+
+    # truncate for reporting
+    current_time_trunc = current_time - datetime.timedelta(microseconds=current_time.microsecond)
+    current_seconds_trunc = time.mktime(current_time_trunc.timetuple())
 
     written = 0
     for stat in event.stats:
@@ -67,7 +69,7 @@ class StatLogger():
         if '_' in subtype:
           subtype = subtype.split('_')[0]
 
-      row = [
+      key = (
         ether_type,
         subtype,
         '{}/{}'.format(*stat.match.get_nw_src()),
@@ -75,14 +77,26 @@ class StatLogger():
         ip_to_hostname(stat.match.get_nw_src()),
         ip_to_hostname(stat.match.get_nw_dst()),
         str(event.connection.ID),
-        current_time,
-        time.mktime(current_time.timetuple()),
+      )
+      values = [
+        current_seconds,
         stat.packet_count,
         stat.byte_count,
         stat.duration_sec,
       ]
+
+      previous_values = self.previous_stats.get(key, (current_seconds - 1, 0, 0, 0))
+      dv = [v - pv for v, pv in zip(values, previous_values)]
+      if dv[0] == 0:
+        # We shouldn't get here unless there's a duplicate stat for the exact same time
+        continue
+      dvdt = [v / dv[0] for v in dv]
+
+      row = [str(current_time_trunc), current_seconds_trunc] + list(key) + dvdt[1:3]
       self.writer.writerow(row)
       written += 1
+
+      self.previous_stats[key] = values
 
     if written:
       self.raw_writer.flush()
