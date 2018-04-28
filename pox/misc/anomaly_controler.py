@@ -229,7 +229,6 @@ class Controller(object):
       msg.idle_timeout = self.default_timeout
       msg.hard_timeout = self.default_timeout
       msg.actions.append(of.ofp_action_output(port=port_out))
-      msg.actions.append(of.ofp_action_output(port=port_out))
 
       # Handle protocol-specific details
       if packet.type == pkt.ethernet.IP_TYPE:
