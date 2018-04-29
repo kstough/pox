@@ -14,6 +14,12 @@ import json
 import math
 import numpy as np
 
+# Anomaly controller parameters
+ac_limit_pps = 20 * 1000  # 20 kpps
+ac_limit_bits_s = 10 * 1024 * 1024  # 10 Mbps
+ac_limit_bps = ac_limit_bits_s / 8
+ac_limit_min_byte_per_packet = 65
+
 ipv4_attrs = pkt.IPV4.ipv4.__dict__
 ipv4_protocol_to_name = {ipv4_attrs[k]: k for k in ipv4_attrs if type(ipv4_attrs[k]) is int}
 
@@ -22,9 +28,6 @@ ipv4_protocol_to_name = {ipv4_attrs[k]: k for k in ipv4_attrs if type(ipv4_attrs
 class AnomalyMonitor:
 
   def __init__(self, connection, mapped_ports):
-    self.limit_pps = 30 * 1000  # 30 kpps
-    self.limit_bits_s = 20 * 1024 * 1024  # 20 Mbps
-    self.limit_bps = self.limit_bits_s / 8
 
     self.default_timeout = 120  # Initially block aggressive clients for 10s
     self.timeout_exp_factor = 2  # Multiply timeout by this much each time
@@ -54,8 +57,11 @@ class AnomalyMonitor:
 
     # Step 1: aggregate event data
     stat_collection = {}
+    conn_id = event.connection.ID
     for stat in event.stats:
-      conn_id = event.connection.ID
+      if len(stat.actions) == 0:
+        # Skip stats on flow rules that we've already blocked
+        continue
       src = '{}/{}'.format(*stat.match.get_nw_src())
       dst = '{}/{}'.format(*stat.match.get_nw_dst())
       first, second = sorted((src, dst))
@@ -87,7 +93,6 @@ class AnomalyMonitor:
       if key not in self.stats:
         # Populate (current index, data)
         self.reset_stats_for_key(key)
-        # self.stats[key] = (0, np.zeros((self.history_depth, 5), dtype=np.float))
 
       index, conn_stats = self.stats[key]
       prev_index = (index + self.history_depth - 1) % self.history_depth
@@ -114,22 +119,36 @@ class AnomalyMonitor:
     # Step 3: Check for high-bandwidth connections
     for key in self.stats:
       index, data = self.stats[key]
-      _, _, _, pps_avg, bps_avg = np.average(data, axis=0)
-      _, _, _, pps_max, bps_max = np.average(data, axis=0)
-      # self.log.debug('{}: {:-10.3f} kpps, {:-10.3f} Mbps'.format(key, pps_avg / 1000,
-      #                                                            bps_avg * 8 / 1024 / 1024))
+      pps_avg, bps_avg = np.average(data[:, 3:5], axis=0)
+      # pps_max, bps_max = np.max(data[:, 3:5], axis=0)
+      # pps_min, bps_min = np.min(data[:, 3:5], axis=0)
+      # pps_var, bps_var = np.var(data[:, 3:5], axis=0)
+      #
+      # self.log.debug(','.join(map(str, [
+      #   '', current_time,
+      #   str(key).replace('(', '').replace(')', ''),
+      #   pps_avg, pps_max, pps_min, pps_var,
+      #   bps_avg, bps_max, bps_min, bps_var,
+      # ])))
 
-      if pps_avg > self.limit_pps or bps_avg > self.limit_bps:
-        self.log.debug('{}: {:-10.3f} kpps, {:-10.3f} Mbps'.format(key, pps_avg / 1000,
-                                                                   bps_avg * 8 / 1024 / 1024))
-        if pps_avg > self.limit_pps:
-          self.log.info('Client exceeded packets per second')
-        else:
-          self.log.info('Client exceeded bytes per second')
+      bytes_per_packet = bps_avg / max(pps_avg, 1)
 
-        # Finally, throttle the connection
-        self.act_on_busy_link(key)
-        self.reset_stats_for_key(key)
+      flow_limit_rules = [
+        (pps_avg > ac_limit_pps, 'Client exceeded packets per second'),
+        (bps_avg > ac_limit_bps, 'Client exceeded bytes per second'),
+        (bytes_per_packet < ac_limit_min_byte_per_packet and pps_avg > 500,
+         'Client is sending too many small packets')
+      ]
+
+      for rule in flow_limit_rules:
+        condition, message = rule
+        if condition:
+          self.log.info(message)
+          self.log.debug('{}: {:-10.3f} kpps, {:-10.3f} Mbps'.format(key, pps_avg / 1000,
+                                                                     bps_avg * 8 / 1024 / 1024))
+          # Finally, throttle the connection
+          self.act_on_busy_link(key)
+          self.reset_stats_for_key(key)
 
   def act_on_busy_link(self, key):
     timeout = self.timeouts[key]
